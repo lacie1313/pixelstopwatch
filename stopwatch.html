@@ -1,0 +1,1132 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LAPMON 스탑워치</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  /* ── 16색 팔레트 ───────────────────────────── */
+  :root {
+    --p: 4px;
+    --f1: 32px;  /* 큰 숫자 (8px 배수) */
+    --f2: 16px;  /* 1/100초 */
+    --f3: 8px;   /* 작은 영문 */
+    --ink: #1b1b2a;
+    --white: #f2f0e5;
+    --lcd: #b5c99a;
+    --lcd-mid: #7f9461;
+    --lcd-dark: #2e3b23;
+    --body-light: #ffffff;
+    --body: #cfe6f2;
+    --body-dark: #7aa6c8;
+    --red: #c8424e;
+    --orange: #f08a3c;
+    --yellow: #ffd35c;
+    --green: #5cb85a;
+    --blue: #3f5fc4;
+    --purple: #8a4fb0;
+    --pink: #f28fb4;
+    --gray: #8b8fa3;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--blue) url("background.jpeg") center / cover no-repeat fixed;
+    image-rendering: pixelated;
+    overflow-x: hidden;
+    font-family: 'Press Start 2P', 'DotGothic16', monospace;
+    color: var(--ink);
+    -webkit-font-smoothing: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  #bg  { position: fixed; left: 0; top: 0; z-index: 0; pointer-events: none; }
+  #mon { position: fixed; left: 0; bottom: 0; z-index: 1; pointer-events: none; }
+
+  main {
+    position: relative; z-index: 2;
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: calc(var(--p) * 4) 16px calc(var(--p) * 28);
+  }
+  .ko { font-family: 'DotGothic16', sans-serif; font-size: 16px; line-height: 1; }
+
+  /* ── 기기 실루엣 (외곽선은 정적 레이어에만 필터 적용) ── */
+  .shell { position: relative; width: calc(var(--p) * 96); padding-top: calc(var(--p) * 7); }
+  .sil {
+    position: absolute; inset: 0; pointer-events: none;
+    filter:
+      drop-shadow(var(--p) 0 0 var(--ink))
+      drop-shadow(calc(var(--p) * -1) 0 0 var(--ink))
+      drop-shadow(0 var(--p) 0 var(--ink))
+      drop-shadow(0 calc(var(--p) * -1) 0 var(--ink))
+      drop-shadow(0 calc(var(--p) * 3) 0 rgba(27, 27, 42, .55));
+  }
+  .ear {
+    position: absolute; top: 0;
+    width: calc(var(--p) * 26); height: calc(var(--p) * 18);
+    background: var(--body);
+    box-shadow: inset 0 calc(var(--p) * 2) 0 var(--body-light);
+  }
+  .ear.l { left: calc(var(--p) * 6); }
+  .ear.r { right: calc(var(--p) * 6); }
+  .knob {
+    position: absolute; top: calc(var(--p) * 3); left: 50%;
+    width: calc(var(--p) * 12); height: calc(var(--p) * 6);
+    margin-left: calc(var(--p) * -6);
+    background: var(--body-dark);
+  }
+  .bodyshape { position: absolute; left: 0; right: 0; top: calc(var(--p) * 7); bottom: 0; background: var(--body); }
+
+  .body {
+    position: relative;
+    background: var(--body);
+    padding: calc(var(--p) * 5) calc(var(--p) * 8) calc(var(--p) * 7);
+    box-shadow:
+      inset calc(var(--p) * 2) calc(var(--p) * 2) 0 var(--body-light),
+      inset calc(var(--p) * -2) calc(var(--p) * -2) 0 var(--body-dark);
+  }
+  /* 반투명 바디 속으로 비치는 회로 */
+  #circuit { position: absolute; left: 0; top: 0; pointer-events: none; opacity: .32; }
+  .body > *:not(#circuit) { position: relative; }
+
+  /* 상단: 로고 + LED + 사운드 스위치 */
+  .top {
+    display: flex; align-items: center; justify-content: space-between;
+    height: calc(var(--p) * 8);
+    margin-bottom: calc(var(--p) * 3);
+  }
+  .brand { display: flex; align-items: center; gap: calc(var(--p) * 2); }
+  .logo { font-size: var(--f2); color: var(--white); text-shadow: var(--p) var(--p) 0 var(--body-dark); letter-spacing: 0; }
+  .model { font-size: 8px; color: var(--body-dark); }
+  .led {
+    width: calc(var(--p) * 2); height: calc(var(--p) * 2);
+    background: var(--body-dark);
+    box-shadow: 0 0 0 var(--p) var(--ink);
+  }
+  .led.on { background: var(--red); }
+  .led.idle { background: var(--green); }
+  .snd {
+    font: inherit; font-size: 8px; cursor: pointer;
+    border: 0; padding: var(--p) calc(var(--p) * 1.5);
+    background: var(--body-dark); color: var(--white);
+    box-shadow: 0 0 0 var(--p) var(--ink), 0 var(--p) 0 var(--p) var(--ink);
+    position: relative; top: 0;
+  }
+  .snd:active, .snd.down { top: var(--p); box-shadow: 0 0 0 var(--p) var(--ink); }
+  .snd.off { background: var(--gray); color: var(--ink); }
+
+  /* LCD 베젤 */
+  .bezel { background: var(--ink); padding: calc(var(--p) * 3); }
+  .bezel.small { padding: calc(var(--p) * 2); }
+  .lcd {
+    position: relative; overflow: hidden;
+    background: var(--lcd); color: var(--lcd-dark);
+    padding: calc(var(--p) * 3);
+    box-shadow: inset var(--p) var(--p) 0 var(--lcd-mid);
+  }
+  /* 도트 격자 + 스캔라인 (하드 엣지 반복 패턴) */
+  .lcd::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(46, 59, 35, .09) 0 1px, transparent 1px var(--p)),
+      repeating-linear-gradient(90deg, rgba(46, 59, 35, .06) 0 1px, transparent 1px var(--p));
+  }
+  .lcd-top {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: var(--f3); line-height: 1;
+    margin-bottom: calc(var(--p) * 3);
+  }
+  .blink { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { visibility: hidden; } }
+  .ghosted { color: var(--lcd-mid); opacity: .5; }
+
+  .time {
+    display: flex; justify-content: center; align-items: flex-end;
+    line-height: 1; white-space: nowrap;
+    text-shadow: var(--p) 0 0 rgba(46, 59, 35, .22); /* LCD 잔상 */
+  }
+  .seg { display: grid; }
+  .seg > * { grid-area: 1 / 1; text-align: right; }
+  .seg .ghost { color: var(--lcd-mid); opacity: .28; text-shadow: none; }
+  .big { font-size: var(--f1); }
+  .cs  { font-size: var(--f2); margin-left: var(--p); }
+
+  .bar {
+    display: flex; justify-content: center; gap: var(--p);
+    margin: calc(var(--p) * 3) 0 calc(var(--p) * 2);
+  }
+  .bar i { width: calc(var(--p) * 2); height: calc(var(--p) * 2); background: var(--lcd-mid); opacity: .3; }
+  .bar i.on { background: var(--lcd-dark); opacity: 1; }
+  #pet { margin: 0 auto; }
+
+  /* 물리 버튼 3개 */
+  .keys {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    margin-top: calc(var(--p) * 6);
+  }
+  .key {
+    font: inherit; color: inherit; background: none; border: 0; padding: 0;
+    display: flex; flex-direction: column; align-items: center; gap: calc(var(--p) * 2);
+    cursor: pointer; touch-action: manipulation;
+  }
+  .key:focus-visible { outline: var(--p) dashed var(--ink); outline-offset: var(--p); }
+  .capwrap {
+    position: relative;
+    width: calc(var(--p) * 18); height: calc(var(--p) * 15);
+    filter:
+      drop-shadow(var(--p) 0 0 var(--ink))
+      drop-shadow(calc(var(--p) * -1) 0 0 var(--ink))
+      drop-shadow(0 var(--p) 0 var(--ink))
+      drop-shadow(0 calc(var(--p) * -1) 0 var(--ink));
+  }
+  .side, .cap { position: absolute; left: 0; width: 100%; height: calc(var(--p) * 12); }
+  .side { top: calc(var(--p) * 3); background: var(--ink); }
+  .cap { top: 0; transition: top 40ms steps(1); }
+  .cap::before { /* 플라스틱 광택 픽셀 */
+    content: ""; position: absolute;
+    left: calc(var(--p) * 4); top: calc(var(--p) * 2);
+    width: calc(var(--p) * 4); height: var(--p);
+    background: var(--white);
+  }
+  .cap::after {
+    content: ""; position: absolute;
+    left: calc(var(--p) * 3); top: calc(var(--p) * 3);
+    width: var(--p); height: var(--p);
+    background: var(--white);
+  }
+  .key:not(:disabled):active .cap, .key.down .cap { top: calc(var(--p) * 3); }
+  .k-start .cap { background: var(--green); box-shadow: inset 0 calc(var(--p) * -2) 0 #3d8a3c; }
+  .k-lap   .cap { background: var(--yellow); box-shadow: inset 0 calc(var(--p) * -2) 0 var(--orange); }
+  .k-reset .cap { background: var(--red); box-shadow: inset 0 calc(var(--p) * -2) 0 #8f2a36; }
+  .key:disabled { cursor: default; }
+  .key:disabled .cap { background: var(--gray); box-shadow: inset 0 calc(var(--p) * -2) 0 #5f6275; }
+  .key:disabled .cap::before, .key:disabled .cap::after { opacity: .4; }
+  .lbl { color: var(--ink); white-space: nowrap; }
+  .kbd {
+    font-size: 8px; line-height: 1; color: var(--white);
+    background: var(--body-dark); padding: calc(var(--p) * .5) var(--p);
+  }
+
+  /* 디지바이스풍 레이아웃: 화면 옆 세로 버튼 */
+  .antenna {
+    position: absolute; top: 0; left: calc(var(--p) * 12);
+    width: calc(var(--p) * 6); height: calc(var(--p) * 12);
+    background: repeating-linear-gradient(0deg, var(--ink) 0 var(--p), #3a3a52 var(--p) calc(var(--p) * 2));
+  }
+  .ear, .knob { display: none; }
+  .shell { width: calc(var(--p) * 128); }
+  .row { display: flex; align-items: center; gap: calc(var(--p) * 5); }
+  .row .bezel { flex: none; width: calc(var(--p) * 80); }
+  .row .keys { display: flex; flex-direction: column; gap: calc(var(--p) * 3); margin: 0; }
+  .row .key {
+    display: grid; grid-template-columns: auto auto; column-gap: calc(var(--p) * 2); row-gap: var(--p);
+    align-items: center; justify-items: start;
+  }
+  .row .capwrap { grid-row: 1 / 3; width: calc(var(--p) * 14); height: calc(var(--p) * 13); }
+  .row .side, .row .cap { height: calc(var(--p) * 10); }
+  .k-start .cap, .k-lap .cap { background: var(--blue); box-shadow: inset 0 calc(var(--p) * -2) 0 #2b438f; }
+  .lbl { color: var(--ink); }
+  .logo { color: var(--blue); text-shadow: var(--p) var(--p) 0 var(--white); }
+  /* 좁은 화면: 버튼을 화면 아래로 */
+  body.stack .shell { width: calc(var(--p) * 96); }
+  body.stack .row { flex-direction: column; align-items: stretch; gap: 0; }
+  body.stack .row .bezel { width: auto; }
+  body.stack .row .keys { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: calc(var(--p) * 6); }
+  body.stack .row .key { display: flex; flex-direction: column; align-items: center; }
+
+  /* 십자형 바디 */
+  .body { background: transparent; box-shadow: none; }
+  .bodyshape, .armshape {
+    position: absolute; background: var(--body);
+    box-shadow:
+      inset calc(var(--p) * 2) calc(var(--p) * 2) 0 var(--body-light),
+      inset calc(var(--p) * -2) calc(var(--p) * -2) 0 var(--body-dark);
+  }
+  .armshape { left: 0; right: 0; }
+  .top, .sub, .foot { margin-left: var(--inset, 0px); margin-right: var(--inset, 0px); }
+
+  /* 보조 화면: 랩 기록 */
+  .sub { margin-top: calc(var(--p) * 6); }
+  .sub-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: calc(var(--p) * 2); }
+  .sub-head span:first-child { font-size: 8px; color: var(--body-dark); }
+  .grille { display: flex; gap: var(--p); }
+  .grille i { width: var(--p); height: var(--p); background: var(--ink); }
+  .sublcd { height: calc(var(--p) * 26); padding: calc(var(--p) * 2); overflow-y: auto; overscroll-behavior: contain; }
+  .sublcd::-webkit-scrollbar { width: var(--p); }
+  .sublcd::-webkit-scrollbar-thumb { background: var(--lcd-dark); }
+  .sublcd::-webkit-scrollbar-track { background: var(--lcd-mid); }
+  #laps { list-style: none; margin: 0; padding: 0; position: relative; z-index: 1; }
+  #laps li {
+    display: flex; align-items: center; gap: calc(var(--p) * 2);
+    padding: var(--p) var(--p);
+    font-size: var(--f3); line-height: 1; white-space: nowrap;
+  }
+  #laps .sp { flex: 1; }
+  #laps .tt { font-size: 8px; color: var(--lcd-mid); }
+  #laps li.best { background: var(--lcd-dark); color: var(--lcd); }
+  #laps li.best .tt { color: var(--lcd); }
+  #laps .arr { width: calc(var(--p) * 3); height: calc(var(--p) * 2); flex: none; }
+  #laps li.best  .arr { background: var(--lcd); clip-path: polygon(33.4% 0, 66.7% 0, 66.7% 50%, 100% 50%, 100% 100%, 0 100%, 0 50%, 33.4% 50%); }
+  #laps li.worst .arr { background: var(--lcd-dark); clip-path: polygon(0 0, 100% 0, 100% 50%, 66.7% 50%, 66.7% 100%, 33.4% 100%, 33.4% 50%, 0 50%); }
+  #laps li.current .ln { animation: blink 1s steps(1) infinite; }
+  .empty { text-align: center; padding-top: calc(var(--p) * 8); color: var(--lcd-mid); position: relative; z-index: 1; }
+
+  .foot { display: flex; justify-content: space-between; align-items: center; margin-top: calc(var(--p) * 4); }
+  .screw { width: calc(var(--p) * 3); height: calc(var(--p) * 3); background: var(--body-dark); box-shadow: 0 0 0 var(--p) var(--ink); position: relative; }
+  .screw::after { content: ""; position: absolute; left: var(--p); top: 0; width: var(--p); height: 100%; background: var(--ink); }
+  .foot .model { font-size: 8px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+  /* ── 정십자 바디 (팔 28p · 중앙 80p · 팔 28p) ── */
+  .shell { width: calc(var(--p) * 136); padding-top: calc(var(--p) * 8); }
+  .vbar, .hbar {
+    position: absolute; background: var(--body);
+    box-shadow:
+      inset calc(var(--p) * 2) calc(var(--p) * 2) 0 var(--body-light),
+      inset calc(var(--p) * -2) calc(var(--p) * -2) 0 var(--body-dark);
+  }
+  .vbar { left: calc(var(--p) * 28); width: calc(var(--p) * 80); top: calc(var(--p) * 8); height: calc(var(--p) * 136); }
+  .hbar { left: 0; width: calc(var(--p) * 136); top: calc(var(--p) * 36); height: calc(var(--p) * 80); }
+  .antenna { left: auto; right: calc(var(--p) * 36); top: 0; height: calc(var(--p) * 10); }
+  .body {
+    width: calc(var(--p) * 136); height: calc(var(--p) * 136);
+    padding: 0; background: transparent; box-shadow: none;
+    display: grid;
+    grid-template-columns: calc(var(--p) * 28) calc(var(--p) * 80) calc(var(--p) * 28);
+    grid-template-rows: calc(var(--p) * 28) calc(var(--p) * 80) calc(var(--p) * 28);
+    clip-path: polygon(20.6% 0, 79.4% 0, 79.4% 20.6%, 100% 20.6%, 100% 79.4%, 79.4% 79.4%, 79.4% 100%, 20.6% 100%, 20.6% 79.4%, 0 79.4%, 0 20.6%, 20.6% 20.6%);
+  }
+  .cell { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; }
+  .c-top { grid-area: 1 / 2; justify-content: space-between; padding: calc(var(--p) * 4) calc(var(--p) * 5) calc(var(--p) * 2); }
+  .c-left { grid-area: 2 / 1; flex-direction: column; gap: calc(var(--p) * 5); padding-left: calc(var(--p) * 2); }
+  .c-mid { grid-area: 2 / 2; }
+  .c-right { grid-area: 2 / 3; flex-direction: column; gap: calc(var(--p) * 5); padding-right: calc(var(--p) * 2); }
+  .c-bot { grid-area: 3 / 2; }
+  .grille.v { flex-direction: column; }
+  .grille.v i { width: calc(var(--p) * 6); }
+  .vmodel { writing-mode: vertical-rl; font-size: 8px; color: var(--body-dark); }
+  .c-mid .bezel { width: calc(var(--p) * 68); height: calc(var(--p) * 68); }
+  .c-mid .lcd { height: 100%; display: flex; flex-direction: column; }
+  .lcd-top { margin-bottom: calc(var(--p) * 2); }
+  .bar { margin: calc(var(--p) * 2) 0; }
+  .log {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    margin-top: var(--p); border-top: var(--p) dashed var(--lcd-mid);
+    position: relative; z-index: 1;
+  }
+  .log::-webkit-scrollbar { width: var(--p); }
+  .log::-webkit-scrollbar-thumb { background: var(--lcd-dark); }
+  #laps li { padding: var(--p) 0; gap: var(--p); }
+  .empty { padding-top: calc(var(--p) * 3); }
+  .keys { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; padding-top: calc(var(--p) * 2); align-items: start; }
+  .key { gap: var(--p); }
+  .capwrap { width: calc(var(--p) * 14); height: calc(var(--p) * 13); }
+  .side, .cap { height: calc(var(--p) * 10); }
+  body.tiny .kbd { display: none; }
+  .fil { position: absolute; width: calc(var(--p) * 8); height: calc(var(--p) * 8); }
+  .fil.tl { left: calc(var(--p) * 20);  top: calc(var(--p) * 28); }
+  .fil.tr { left: calc(var(--p) * 108); top: calc(var(--p) * 28); transform: scaleX(-1); }
+  .fil.bl { left: calc(var(--p) * 20);  top: calc(var(--p) * 116); transform: scaleY(-1); }
+  .fil.br { left: calc(var(--p) * 108); top: calc(var(--p) * 116); transform: scale(-1, -1); }
+  .log { overflow-x: hidden; }
+  body.narrow #laps .tt { display: none; }
+</style>
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+<canvas id="mon" aria-hidden="true"></canvas>
+
+<main>
+  <div class="shell">
+    <div class="sil" aria-hidden="true">
+      <div class="antenna" data-step="1"></div>
+      <div class="vbar" data-step="5,3,2,1,1"></div>
+      <div class="hbar" data-step="5,3,2,1,1"></div>
+      <canvas class="fil tl"></canvas><canvas class="fil tr"></canvas>
+      <canvas class="fil bl"></canvas><canvas class="fil br"></canvas>
+    </div>
+
+    <div class="body">
+      <canvas id="circuit" aria-hidden="true"></canvas>
+
+      <div class="cell c-top">
+        <span class="logo">LAPMON</span>
+        <button class="snd" id="sndBtn" type="button" aria-label="효과음 켜기/끄기 (M)">SND ON</button>
+      </div>
+
+      <div class="cell c-left" aria-hidden="true">
+        <span class="led idle" id="led"></span>
+        <span class="grille v"><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="screw"></span>
+      </div>
+
+      <div class="cell c-mid">
+        <div class="bezel" data-step="3,1">
+          <div class="lcd" data-step="1">
+            <div class="lcd-top">
+              <span id="status">READY</span>
+              <span id="lapCount">LAP 00</span>
+            </div>
+            <div class="time" role="timer" aria-live="off">
+              <div class="seg big"><span class="ghost" id="ghost">88:88</span><span id="tMain">00:00</span></div>
+              <div class="seg cs"><span class="ghost">.88</span><span id="tCs">.00</span></div>
+            </div>
+            <div class="bar" id="bar" aria-hidden="true"></div>
+            <canvas id="pet" aria-hidden="true"></canvas>
+            <div class="log" id="sub">
+              <ul id="laps"></ul>
+              <div class="empty ko" id="empty">랩 기록 없음</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell c-right" aria-hidden="true">
+        <span class="vmodel">LM-01</span>
+        <span class="screw"></span>
+      </div>
+
+      <div class="cell c-bot keys">
+        <button class="key k-start" id="startBtn" type="button" aria-label="시작/정지 (Space)">
+          <span class="capwrap"><span class="side" data-step="4,2,1"></span><span class="cap" data-step="4,2,1"></span></span>
+          <span class="lbl ko" id="startLbl">시작</span>
+          <span class="kbd">SPACE</span>
+        </button>
+        <button class="key k-lap" id="lapBtn" type="button" aria-label="랩 (L)" disabled>
+          <span class="capwrap"><span class="side" data-step="4,2,1"></span><span class="cap" data-step="4,2,1"></span></span>
+          <span class="lbl ko">랩</span>
+          <span class="kbd">L</span>
+        </button>
+        <button class="key k-reset" id="resetBtn" type="button" aria-label="재설정 (R)" disabled>
+          <span class="capwrap"><span class="side" data-step="4,2,1"></span><span class="cap" data-step="4,2,1"></span></span>
+          <span class="lbl ko">재설정</span>
+          <span class="kbd">R</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const root = document.documentElement;
+  let P = 4;
+
+  /* ── 팔레트 (CSS와 동일한 16색) ─────────────────── */
+  const PAL = {
+    k: '#1b1b2a', w: '#f2f0e5', L: '#b5c99a', M: '#7f9461', D: '#2e3b23',
+    h: '#ffffff', c: '#cfe6f2', t: '#7aa6c8', r: '#c8424e', o: '#f08a3c',
+    y: '#ffd35c', G: '#5cb85a', b: '#3f5fc4', v: '#8a4fb0', q: '#f28fb4', a: '#8b8fa3'
+  };
+
+  /* ── 오리지널 몬스터 6종 (16x16, 위 14줄 몸통 + 아래 2줄 다리 2프레임) ── */
+  const SPECIES = [
+    { name: 'PEBBLO', body: [ // 이끼 덮인 돌멩이
+      '......G.G.......',
+      '.....GGGGG......',
+      '...kkkkkkkkkk...',
+      '..kaaaaaaaaaak..',
+      '.kawwaaaaaaaaak.',
+      '.kawaaaaaaaaaak.',
+      '.kaakkaaaakkaak.',
+      '.kaakwaaaakwaak.',
+      '.kaaaaaaaaaaaak.',
+      '.kaaaakkkkaaaak.',
+      '.kaaaaaaaaaakak.',
+      '.kaakaaaaaaaaak.',
+      '..kaaaaaaaaaak..',
+      '...kkkkkkkkkk...'],
+      legs: [['...kak....kak...', '...kk.....kk....'], ['....kak..kak....', '.....kk..kk.....']] },
+    { name: 'JELLOP', float: true, body: [ // 떠다니는 노란 해파리
+      '.....kkkkkk.....',
+      '...kkyyyyyykk...',
+      '..kyywwyyyyyyk..',
+      '.kyywyyyyyyyyyk.',
+      '.kyyyyyyyyyyyyk.',
+      '.kyykkyyyykkyyk.',
+      '.kyykwyyyykwyyk.',
+      '.kyqyyyyyyyyqyk.',
+      '.kyyyyykkyyyyyk.',
+      '..kkkkkkkkkkkk..',
+      '...kok.kok.kok..',
+      '...kok.kok.kok..',
+      '...kok..kok.kok.',
+      '....kok.kok.kok.'],
+      legs: [['....kk..kk..kk..', '................'], ['...kk..kk..kk...', '................']] },
+    { name: 'FLICKA', body: [ // 외눈 보라 불꽃
+      '.......k........',
+      '......kvk.......',
+      '.....kvvk..k....',
+      '.....kvvvkkvk...',
+      '....kvvqvvvvk...',
+      '...kvvqqqvvvvk..',
+      '...kvvkkkkvvvk..',
+      '..kvvkwwwwkvvvk.',
+      '..kvvkwkkwkvvvk.',
+      '..kvvkwkkwkvvvk.',
+      '..kvvvkkkkvvvvk.',
+      '..kvvvvvvvvvvvk.',
+      '...kvvvkkvvvvk..',
+      '....kkkkkkkkk...'],
+      legs: [['....kvk..kvk....', '....kk....kk....'], ['.....kvkkvk.....', '.....kk..kk.....']] },
+    { name: 'BOXBIT', body: [ // 화면 얼굴 상자 로봇
+      '.......y........',
+      '.......k........',
+      '.......k........',
+      '..kkkkkkkkkkkk..',
+      '..krrrrrrrrrrk..',
+      '..krkkkkkkkkrk..',
+      '..krkLLLLLLkrk..',
+      '..krkLkLLkLkrk..',
+      '..krkLLLLLLkrk..',
+      '..krkLLkkLLkrk..',
+      '..krkkkkkkkkrk..',
+      '..krrrrrrrrrrk..',
+      '..krryrrrrrrrk..',
+      '..kkkkkkkkkkkk..'],
+      legs: [['..kakakakakakk..', '...kkkkkkkkkk...'], ['..kkakakakakak..', '...kkkkkkkkkk...']] },
+    { name: 'SHELLO', body: [ // 파란 소용돌이 껍질 달팽이
+      '.kk..kk.........',
+      '.kwk.kwk........',
+      '..k...k..kkkkk..',
+      '..kyyyk.kbbbbbk.',
+      '.kyyyyykbcccccbk',
+      '.kykyyykbcbbbcbk',
+      '.kyyyyykbcbkbcbk',
+      '.kyqyyykbcbbcbbk',
+      '..kyyyykbccccbbk',
+      '..kyyyyykbbbbbk.',
+      '..kyyyyyykkkkkk.',
+      '...kyyyyyyyyyk..',
+      '...kyyyyyyyyyyk.',
+      '....kkkkkkkkkk..'],
+      legs: [['...........a.a..', '................'], ['..........a.a...', '................']] },
+    { name: 'HOOTLE', body: [ // 뿔깃 초록 부엉이
+      '.kk..........kk.',
+      '.kGk........kGk.',
+      '.kGGkkkkkkkkGGk.',
+      '.kGGGGGGGGGGGGk.',
+      '.kGwwwGGGGwwwGk.',
+      '.kwwwwwGGwwwwwk.',
+      '.kwwkkwGGwkkwwk.',
+      '.kwwkkwGGwkkwwk.',
+      '.kGwwwGyyGwwwGk.',
+      '.kGGGGGGyGGGGGk.',
+      '.kGGGwwwwwwGGGk.',
+      '.kGGwwkwwkwwGGk.',
+      '..kGwwwwwwwwGk..',
+      '...kkkkkkkkkk...'],
+      legs: [['....kyk..kyk....', '...kyyk..kyyk...'], ['....kyk..kyk....', '....kyyk.kyyk...']] }
+  ];
+  const EGG = [
+    '......kkkk......',
+    '.....kwwwwk.....',
+    '....kwwowwwk....',
+    '...kwwwwwwwwk...',
+    '...kwwwwwwowk...',
+    '..kwowwwwwwwwk..',
+    '..kwwwwwwwwwwk..',
+    '..kGwwGwwGwwGk..',
+    '..kGGwGGwGGwGk..',
+    '..kwGGwGGGwGGk..',
+    '..kwwwwwwwwwwk..',
+    '..kwwwwwowwwwk..',
+    '...kwwwwwwwwk...',
+    '...kwowwwwwwk...',
+    '....kwwwwwwk....',
+    '.....kkkkkk.....'
+  ];
+
+  function makeSprite(rows, mono) {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 16;
+    const x = c.getContext('2d');
+    rows.forEach((r, yy) => {
+      r = (r + '................').slice(0, 16);
+      for (let xx = 0; xx < 16; xx++) {
+        const ch = r[xx];
+        if (ch === '.') continue;
+        x.fillStyle = mono ? (ch === 'k' ? PAL.D : ch === 'w' || ch === 'L' ? PAL.L : PAL.M) : PAL[ch];
+        x.fillRect(xx, yy, 1, 1);
+      }
+    });
+    return c;
+  }
+  SPECIES.forEach(s => {
+    s.img = s.legs.map(l => makeSprite(s.body.concat(l)));
+    s.mono = s.legs.map(l => makeSprite(s.body.concat(l), true));
+  });
+  const eggImg = makeSprite(EGG), eggMono = makeSprite(EGG, true);
+
+  /* 3x5 픽셀 글꼴 (캔버스용) */
+  const GLYPH = {
+    '0': '111101101101111', '1': '010110010010111', '2': '111001111100111', '3': '111001111001111',
+    '4': '101101111001001', '5': '111100111001111', '6': '111100111101111', '7': '111001010010010',
+    '8': '111101111101111', '9': '111101111001111', 'Z': '111001010100111', 'L': '100100100100111',
+    '!': '010010010000010'
+  };
+  function pixText(ctx, str, x, y, color) {
+    ctx.fillStyle = color;
+    [...str].forEach((ch, i) => {
+      const g = GLYPH[ch]; if (!g) return;
+      for (let j = 0; j < 15; j++) if (g[j] === '1') ctx.fillRect(x + i * 4 + (j % 3), y + Math.floor(j / 3), 1, 1);
+    });
+  }
+
+  function drawSprite(ctx, img, x, y, flip, sit) {
+    x = Math.round(x); y = Math.round(y);
+    ctx.save();
+    if (flip) { ctx.translate(x + 16, 0); ctx.scale(-1, 1); x = 0; }
+    if (sit) ctx.drawImage(img, 0, 0, 16, 14, x, y + 2, 16, 14);
+    else ctx.drawImage(img, x, y);
+    ctx.restore();
+  }
+
+  /* ── 효과음 (Web Audio, 8비트 사각파) ───────────── */
+  let muted = false;
+  try { muted = localStorage.getItem('lapmon-muted') === '1'; } catch (e) {}
+  let actx = null;
+  function beep(freqs, dur = 0.07, vol = 0.05, type = 'square') {
+    if (muted) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume();
+      let t = actx.currentTime;
+      freqs.forEach(f => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = type; o.frequency.value = f;
+        g.gain.setValueAtTime(vol, t);
+        g.gain.setValueAtTime(0, t + dur * 0.9);
+        o.connect(g).connect(actx.destination);
+        o.start(t); o.stop(t + dur);
+        t += dur;
+      });
+    } catch (e) {}
+  }
+  const SFX = {
+    start: () => beep([523, 784]),
+    stop:  () => beep([784, 523]),
+    lap:   () => beep([988, 1319], 0.05),
+    reset: () => beep([523, 659, 784, 1047], 0.06),
+    hatch: () => beep([1319, 1568, 2093], 0.05),
+    err:   () => beep([140], 0.12, 0.04),
+    tick:  () => beep([1760], 0.03, 0.03)
+  };
+
+  /* ── 스톱워치 상태 ─────────────────────────────── */
+  let running = false, startTime = 0, elapsed = 0, laps = [];
+  const now = () => running ? elapsed + (performance.now() - startTime) : elapsed;
+  const pad = n => String(n).padStart(2, '0');
+  function fmt(ms) {
+    const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60,
+          s = Math.floor(ms / 1000) % 60, cs = Math.floor(ms / 10) % 100;
+    return { main: (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s), cs: pad(cs), h };
+  }
+  const fmtStr = ms => { const f = fmt(ms); return f.main + '.' + f.cs; };
+  const lapSum = () => laps.reduce((a, b) => a + b, 0);
+
+  const el = {
+    tMain: $('tMain'), tCs: $('tCs'), ghost: $('ghost'), status: $('status'), lapCount: $('lapCount'),
+    led: $('led'), laps: $('laps'), empty: $('empty'), sub: $('sub'),
+    start: $('startBtn'), lap: $('lapBtn'), reset: $('resetBtn'), startLbl: $('startLbl'), snd: $('sndBtn')
+  };
+  const barEls = [];
+  for (let i = 0; i < 20; i++) { const s = document.createElement('i'); $('bar').appendChild(s); barEls.push(s); }
+
+  let lastMain = '', lastCs = '', lastBar = -1, statusOverride = null;
+  function renderTime() {
+    const t = now(), f = fmt(t);
+    if (f.main !== lastMain) {
+      el.tMain.textContent = f.main;
+      el.ghost.textContent = f.h ? '8:88:88'.slice(-f.main.length) : '88:88';
+      lastMain = f.main;
+    }
+    const cs = '.' + f.cs;
+    if (cs !== lastCs) { el.tCs.textContent = cs; lastCs = cs; }
+    const n = t === 0 ? 0 : Math.floor((t % 60000) / 3000) + 1;
+    if (n !== lastBar) { barEls.forEach((b, i) => b.classList.toggle('on', i < n)); lastBar = n; }
+    const cur = el.laps.querySelector('li.current .sp');
+    if (cur) cur.textContent = fmtStr(t - lapSum());
+  }
+
+  function renderStatus() {
+    if (statusOverride) { el.status.textContent = statusOverride; el.status.className = 'blink'; return; }
+    el.status.textContent = running ? 'RUN' : elapsed ? 'STOP' : 'READY';
+    el.status.className = !running && elapsed ? 'blink' : '';
+    el.lapCount.textContent = 'LAP ' + pad(Math.min(99, laps.length));
+    el.led.className = 'led ' + (running ? 'on blink' : elapsed ? '' : 'idle');
+  }
+
+  function renderLaps() {
+    el.laps.innerHTML = '';
+    const has = running || elapsed > 0;
+    el.empty.style.display = has ? 'none' : '';
+    if (!has) return;
+    const sum = lapSum();
+    const rows = [];
+    rows.push(`<li class="current"><span class="arr"></span><span class="ln">L${pad(laps.length + 1)}</span><span class="sp">${fmtStr(now() - sum)}</span><span class="tt">${fmtStr(now())}</span></li>`);
+    const min = Math.min(...laps), max = Math.max(...laps);
+    let total = sum;
+    for (let i = laps.length - 1; i >= 0; i--) {
+      let cls = '';
+      if (laps.length >= 2 && laps[i] === min) cls = 'best';
+      else if (laps.length >= 2 && laps[i] === max) cls = 'worst';
+      rows.push(`<li class="${cls}"><span class="arr"></span><span class="ln">L${pad(i + 1)}</span><span class="sp">${fmtStr(laps[i])}</span><span class="tt">${fmtStr(total)}</span></li>`);
+      total -= laps[i];
+    }
+    el.laps.innerHTML = rows.join('');
+  }
+
+  function renderButtons() {
+    el.startLbl.textContent = running ? '정지' : '시작';
+    el.lap.disabled = !running;
+    el.reset.disabled = running || elapsed === 0;
+  }
+  function renderAll() { renderTime(); renderStatus(); renderLaps(); renderButtons(); }
+
+  function flash(btn) {
+    btn.classList.add('down');
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => btn.classList.remove('down'), 140);
+  }
+
+  function toggle() {
+    if (running) {
+      elapsed += performance.now() - startTime;
+      running = false;
+      SFX.stop();
+      setMode('sleep');
+    } else {
+      startTime = performance.now();
+      running = true;
+      SFX.start();
+      setMode('run');
+    }
+    renderAll();
+  }
+  function lap() {
+    if (!running) { SFX.err(); return; }
+    laps.push(now() - lapSum());
+    SFX.lap();
+    monsterJump(laps.length);
+    renderAll();
+  }
+  function reset() {
+    if (running || elapsed === 0) { SFX.err(); return; }
+    elapsed = 0; laps = [];
+    SFX.reset();
+    setMode('idle');
+    startHatch();
+    renderAll();
+  }
+  function toggleMute() {
+    muted = !muted;
+    try { localStorage.setItem('lapmon-muted', muted ? '1' : '0'); } catch (e) {}
+    el.snd.textContent = muted ? 'SND OFF' : 'SND ON';
+    el.snd.classList.toggle('off', muted);
+    if (!muted) SFX.tick();
+  }
+
+  el.start.addEventListener('click', () => toggle());
+  el.lap.addEventListener('click', () => lap());
+  el.reset.addEventListener('click', () => reset());
+  el.snd.addEventListener('click', () => toggleMute());
+  // 클릭 후 포커스가 남아 Space가 버튼을 다시 누르지 않도록
+  document.querySelectorAll('button').forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
+
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) { flash(el.start); toggle(); } }
+    else if (e.repeat) return;
+    else if (k === 'l') { if (!el.lap.disabled) flash(el.lap); lap(); }
+    else if (k === 'r') { if (!el.reset.disabled) flash(el.reset); reset(); }
+    else if (k === 'm') { flash(el.snd); toggleMute(); }
+  });
+  document.addEventListener('keyup', e => { if (e.code === 'Space') e.preventDefault(); });
+
+  /* ── 몬스터 월드 ──────────────────────────────── */
+  const bg = $('bg'), bgx = bg.getContext('2d');
+  const mon = $('mon'), mx = mon.getContext('2d');
+  const pet = $('pet'), px = pet.getContext('2d');
+  const circuit = $('circuit'), cx = circuit.getContext('2d');
+  let W = 0, H = 0, PW = 0, PS = 1;
+  let ground = null;
+  let mode = 'idle';
+  let monsters = [], particles = [], hatch = null, frame = 0;
+  let petSpecies = 0;
+  const petState = { x: 10, dir: 1, jy: 0, vy: 0 };
+
+  function newMonster(sp, x) {
+    return { sp, x, lane: Math.floor(Math.random() * 6), dir: Math.random() < .5 ? -1 : 1,
+             v: 0, target: 0, pause: 0, jy: 0, vy: 0, bubble: null, z: Math.random() * 90, t: Math.random() * 100 };
+  }
+
+  function setMode(m) {
+    mode = m;
+    monsters.forEach(mo => {
+      if (m === 'run') { mo.dir = 1; mo.target = 0.8 + Math.random() * 0.7; mo.pause = 0; }
+      else if (m === 'idle') { mo.target = 0.25; }
+      else { mo.target = 0; mo.z = Math.random() * 90; }
+    });
+  }
+
+  function monsterJump(n) {
+    if (!monsters.length) return;
+    const m = monsters[(n - 1) % monsters.length];
+    m.vy = -3.2;
+    m.bubble = { text: 'L' + n, t: 110 };
+    petState.vy = -2.6;
+  }
+
+  function burst(x, y, colors, n = 10, up = 2) {
+    for (let i = 0; i < n; i++) particles.push({
+      x, y, vx: (Math.random() - .5) * 2.4, vy: -Math.random() * up - .4,
+      c: colors[i % colors.length], life: 30 + Math.random() * 20, g: .12
+    });
+  }
+
+  function startHatch() {
+    const present = new Set(monsters.map(m => m.sp));
+    const pool = SPECIES.map((_, i) => i).filter(i => !present.has(i));
+    const sp = pool.length ? pool[Math.floor(Math.random() * pool.length)] : Math.floor(Math.random() * SPECIES.length);
+    hatch = { sp, x: Math.round(W * (0.15 + Math.random() * 0.7)), lane: 3, t: 0 };
+  }
+
+  function baseY(lane) { return H - 8 + lane; }
+
+  function updateHatch(dt) {
+    if (!hatch) return;
+    const before = hatch.t;
+    hatch.t += dt;
+    if (before < 24 && hatch.t >= 24) { burst(hatch.x + 8, baseY(hatch.lane), [PAL.a, PAL.w], 6, 1); SFX.tick(); }
+    if (before < 84 && hatch.t >= 84) {
+      burst(hatch.x + 8, baseY(hatch.lane) - 8, [PAL.w, PAL.G, PAL.o, PAL.y], 16, 2.6);
+      const m = newMonster(hatch.sp, hatch.x);
+      m.lane = hatch.lane; m.vy = -2.5; m.target = 0.25;
+      monsters.push(m);
+      if (monsters.length > 6) {
+        const old = monsters.shift();
+        burst(old.x + 8, baseY(old.lane) - 8, [PAL.w, PAL.a], 10, 1.5);
+      }
+      petSpecies = hatch.sp;
+      statusOverride = 'NEW ' + SPECIES[hatch.sp].name;
+      renderStatus();
+      setTimeout(() => { statusOverride = null; renderStatus(); }, 2200);
+      SFX.hatch();
+      hatch = null;
+    }
+  }
+
+  function drawHatch() {
+    if (!hatch) return;
+    const t = hatch.t, by = baseY(hatch.lane) - 16;
+    let y = by, x = hatch.x;
+    if (t < 24) y = by - Math.pow(1 - t / 24, 2) * (by + 16);
+    else if (t > 30) {
+      const fast = t > 58;
+      const ph = Math.floor(t / (fast ? 3 : 7)) % 2;
+      x += (ph ? 1 : -1) * (fast || Math.floor(t / 7) % 3 !== 0 ? 1 : 0);
+    }
+    drawSprite(mx, eggImg, x, y);
+    if (t >= 56) { // 금이 가는 연출
+      mx.fillStyle = PAL.k;
+      const crack = [[3, 7], [4, 6], [5, 7], [6, 6], [7, 7], [8, 6], [9, 7], [10, 6], [11, 7], [12, 6]];
+      crack.slice(0, Math.min(crack.length, Math.floor((t - 56) / 2.5) + 2))
+        .forEach(([cxp, cyp]) => mx.fillRect(Math.round(x) + cxp, Math.round(y) + cyp, 1, 1));
+    }
+  }
+
+  function updateMonsters(dt) {
+    monsters.forEach(m => {
+      m.t += dt;
+      m.v += (m.target - m.v) * Math.min(1, 0.08 * dt);
+      if (mode === 'idle') {
+        if (m.pause > 0) { m.pause -= dt; }
+        else {
+          m.x += m.dir * m.v * dt;
+          if (Math.random() < 0.006 * dt) m.pause = 30 + Math.random() * 90;
+          if (Math.random() < 0.004 * dt) m.dir *= -1;
+        }
+        if (m.x < 2) { m.x = 2; m.dir = 1; }
+        if (m.x > W - 18) { m.x = W - 18; m.dir = -1; }
+      } else if (mode === 'run') {
+        m.x += m.dir * m.v * dt;
+        if (m.x > W + 4) m.x = -20;
+        if (Math.random() < 0.12 * dt * m.v) particles.push({ x: m.x + 2, y: baseY(m.lane) - 1, vx: -.3, vy: -.15, c: PAL.w, life: 14, g: 0 });
+      } else {
+        m.x += m.dir * m.v * dt;
+        if (m.x > W + 4) m.x = -20;
+      }
+      if (m.vy !== 0 || m.jy < 0) {
+        m.vy += 0.22 * dt; m.jy += m.vy * dt;
+        if (m.jy >= 0) { m.jy = 0; m.vy = 0; }
+      }
+      if (m.bubble && (m.bubble.t -= dt) <= 0) m.bubble = null;
+    });
+  }
+
+  function drawBubble(ctx, text, cxm, top, fill, ink) {
+    const w = text.length * 4 + 3, h = 9;
+    const bx = Math.round(cxm - w / 2), by = Math.round(top - h - 2);
+    ctx.fillStyle = ink; ctx.fillRect(bx, by, w, h); ctx.fillRect(bx + Math.floor(w / 2) - 1, by + h, 3, 2);
+    ctx.fillStyle = fill; ctx.fillRect(bx + 1, by + 1, w - 2, h - 2); ctx.fillRect(bx + Math.floor(w / 2), by + h - 1, 1, 2);
+    pixText(ctx, text, bx + 2, by + 2, ink);
+  }
+
+  function drawZ(ctx, x, y, phase, fill, ink) {
+    for (let i = 0; i < 3; i++) {
+      const p = ((phase + i * 30) % 90) / 90;
+      const zx = Math.round(x + p * 8), zy = Math.round(y - p * 12);
+      if (ink) pixText(ctx, 'Z', zx + 1, zy + 1, ink);
+      pixText(ctx, 'Z', zx, zy, fill);
+    }
+  }
+
+  function drawMonsters() {
+    [...monsters].sort((a, b) => a.lane - b.lane).forEach(m => {
+      const s = SPECIES[m.sp];
+      const sitting = mode === 'sleep' && m.v < 0.05 && m.jy === 0;
+      const rate = mode === 'run' ? 4 : 10;
+      const moving = !sitting && (mode === 'run' || (mode === 'idle' && m.pause <= 0) || m.v > .05);
+      const f = moving ? Math.floor(m.t / rate) % 2 : 0;
+      let y = baseY(m.lane) - 16 + m.jy;
+      if (s.float && !sitting) y += Math.round(Math.sin(m.t / 12));
+      if (mode === 'run' && !s.float && f === 1 && m.jy === 0) y -= 1; // 달리기 들썩임
+      if (sitting && Math.floor(m.t / 40) % 2) y += 0; // 숨쉬기
+      drawSprite(mx, s.img[f], m.x, y, m.dir > 0, sitting);
+      if (sitting) drawZ(mx, m.x + 12, y + 2, m.t + m.z, PAL.w, PAL.k);
+      if (m.bubble) drawBubble(mx, m.bubble.text, m.x + 8, y, PAL.w, PAL.k);
+    });
+  }
+
+  function updateParticles(dt) {
+    particles = particles.filter(p => {
+      p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      return p.life > 0;
+    });
+  }
+  function drawParticles() {
+    particles.forEach(p => { mx.fillStyle = p.c; mx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1); });
+  }
+
+  /* LCD 안의 작은 펫 */
+  function drawPet(dt) {
+    const w = pet.width, h = pet.height;
+    px.clearRect(0, 0, w, h);
+    px.fillStyle = PAL.M;
+    for (let x = 0; x < w; x += 2) px.fillRect(x, h - 1, 1, 1);
+    if (hatch) {
+      const wob = hatch.t > 30 ? (Math.floor(hatch.t / 5) % 2 ? 1 : -1) : 0;
+      drawSprite(px, eggMono, Math.round(w / 2 - 8 + wob), h - 17);
+      return;
+    }
+    const s = SPECIES[petSpecies], st = petState;
+    const speed = mode === 'run' ? 0.7 : mode === 'idle' ? 0.2 : 0;
+    st.x += st.dir * speed * dt;
+    if (mode === 'run') { st.dir = 1; if (st.x > w + 2) st.x = -18; }
+    else { if (st.x < 1) { st.x = 1; st.dir = 1; } if (st.x > w - 17) { st.x = w - 17; st.dir = -1; } }
+    if (st.vy !== 0 || st.jy < 0) { st.vy += 0.22 * dt; st.jy += st.vy * dt; if (st.jy >= 0) { st.jy = 0; st.vy = 0; } }
+    const sitting = mode === 'sleep' && st.jy === 0;
+    const f = speed ? Math.floor(frame / (mode === 'run' ? 4 : 10)) % 2 : 0;
+    const y = h - 17 + st.jy;
+    drawSprite(px, s.mono[f], st.x, y, st.dir > 0, sitting);
+    if (sitting) drawZ(px, st.x + 13, y + 3, frame, PAL.D);
+  }
+
+  /* 정적 레이어: 배경, 풀밭, 회로 */
+  const bgImg = new Image();
+  bgImg.onload = drawBg;
+  bgImg.src = 'background.jpeg';
+  function drawBg() {
+    if (!bgImg.naturalWidth) return;
+    // 배경을 픽셀 단위(P)로 축소한 뒤 정수 배율로 확대해 도트 느낌을 살림
+    const BW = Math.ceil(innerWidth / P), BH = Math.ceil(innerHeight / P);
+    bg.width = BW; bg.height = BH;
+    bg.style.width = BW * P + 'px'; bg.style.height = BH * P + 'px';
+    const sc = Math.max(BW / bgImg.naturalWidth, BH / bgImg.naturalHeight);
+    const dw = bgImg.naturalWidth * sc, dh = bgImg.naturalHeight * sc;
+    bgx.imageSmoothingEnabled = true;
+    bgx.drawImage(bgImg, (BW - dw) / 2, (BH - dh) / 2, dw, dh);
+  }
+
+  function buildGround() {
+    ground = document.createElement('canvas');
+    ground.width = W; ground.height = 12;
+    const g = ground.getContext('2d');
+    g.fillStyle = PAL.G; g.fillRect(0, 2, W, 10);
+    g.fillStyle = PAL.k; g.fillRect(0, 2, W, 1);
+    for (let x = 0; x < W; x++) {
+      if (x % 5 === 0 || x % 7 === 3) { g.fillStyle = PAL.k; g.fillRect(x, 1, 1, 1); g.fillStyle = PAL.G; g.fillRect(x, 2, 1, 1); }
+      if ((x * 7) % 11 === 0) { g.fillStyle = PAL.L; g.fillRect(x, 5 + (x % 4), 1, 1); }
+      if ((x * 5) % 13 === 0) { g.fillStyle = PAL.t; g.fillRect(x, 7 + (x % 3), 1, 1); }
+    }
+  }
+
+  function drawCircuit() {
+    const body = document.querySelector('.body');
+    const cw = Math.round(body.offsetWidth / P), ch = Math.round(body.offsetHeight / P);
+    circuit.width = cw; circuit.height = ch;
+    circuit.style.width = cw * P + 'px'; circuit.style.height = ch * P + 'px';
+    cx.clearRect(0, 0, cw, ch);
+    cx.fillStyle = PAL.t;
+    let seed = 7;
+    const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+    for (let i = 0; i < 14; i++) {
+      let x = Math.floor(rnd() * cw), y = Math.floor(rnd() * ch);
+      for (let s = 0; s < 4; s++) {
+        const len = 4 + Math.floor(rnd() * 14), horiz = s % 2 === 0;
+        for (let k = 0; k < len; k++) { cx.fillRect(x, y, 1, 1); horiz ? x++ : y++; }
+      }
+      cx.fillRect(x - 1, y - 1, 3, 3);
+    }
+  }
+
+  /* 계단식 둥근 모서리 */
+  function stepPoly(w, h, prof) {
+    prof = prof.concat(0);
+    const top = [];
+    prof.forEach((d, i) => { top.push([d, i], [d, i + 1]); });
+    const rev = top.slice().reverse();
+    const pts = [
+      ...top.map(([d, y]) => [w - d * P, y * P]),
+      ...rev.map(([d, y]) => [w - d * P, h - y * P]),
+      ...top.map(([d, y]) => [d * P, h - y * P]),
+      ...rev.map(([d, y]) => [d * P, y * P])
+    ];
+    return 'polygon(' + pts.map(([x, y]) => x + 'px ' + y + 'px').join(',') + ')';
+  }
+  function applyStep(node) {
+    node.style.clipPath = stepPoly(node.offsetWidth, node.offsetHeight, node.dataset.step.split(',').map(Number));
+  }
+  const ro = new ResizeObserver(entries => {
+    entries.forEach(e => applyStep(e.target));
+    drawCircuit();
+    if (typeof shapeCross === 'function') shapeCross();
+  });
+  document.querySelectorAll('[data-step]').forEach(n => ro.observe(n));
+
+  function shapeCross() { return;
+    const body = document.querySelector('.body'), row = document.querySelector('.row');
+    const bs = document.querySelector('.bodyshape'), arm = document.querySelector('.armshape');
+    const ins = (document.body.classList.contains('stack') ? 6 : 12) * P;
+    const top7 = 7 * P, t = row.offsetTop - 4 * P, b = row.offsetTop + row.offsetHeight + 4 * P;
+    const w = body.offsetWidth, h = body.offsetHeight;
+    bs.style.left = ins + 'px'; bs.style.right = ins + 'px';
+    arm.style.top = top7 + t + 'px'; arm.style.height = (b - t) + 'px';
+    body.style.clipPath = `polygon(${ins}px 0,${w - ins}px 0,${w - ins}px ${t}px,${w}px ${t}px,${w}px ${b}px,${w - ins}px ${b}px,${w - ins}px ${h}px,${ins}px ${h}px,${ins}px ${b}px,0 ${b}px,0 ${t}px,${ins}px ${t}px)`;
+    applyStep(bs); applyStep(arm);
+  }
+
+  function layout() {
+    const w = innerWidth, h = innerHeight;
+    P = Math.max(2, Math.min(6, Math.floor(Math.min((w - 32) / 138, (h - 16) / 178))));
+    document.body.classList.toggle('tiny', P < 3);
+    document.body.classList.toggle('narrow', P < 5);
+    root.style.setProperty('--p', P + 'px');
+    root.style.setProperty('--f1', 8 * P + 'px');
+    root.style.setProperty('--f2', 8 * Math.max(1, Math.floor(P / 2)) + 'px');
+    root.style.setProperty('--f3', (P >= 4 ? 16 : 8) + 'px');
+
+    const oldW = W;
+    W = Math.ceil(w / P); H = Math.ceil(h / P);
+    mon.width = W; mon.height = H;
+    mon.style.width = W * P + 'px'; mon.style.height = H * P + 'px';
+    if (oldW && oldW !== W) monsters.forEach(m => { m.x = m.x / oldW * W; });
+    buildGround();
+
+    PS = Math.max(1, Math.floor(P / 2));
+    PW = Math.floor(56 * P / PS);
+    pet.width = PW; pet.height = 20;
+    pet.style.width = PW * PS + 'px'; pet.style.height = 20 * PS + 'px';
+
+    root.style.setProperty('--inset', (document.body.classList.contains('stack') ? 6 : 12) * P + 'px');
+    drawBg();
+    document.querySelectorAll('[data-step]').forEach(applyStep);
+    requestAnimationFrame(shapeCross);
+  }
+
+  /* 십자 교차부 안쪽 곡선 (8x8 픽셀, 오른쪽 아래 모서리를 채움) */
+  document.querySelectorAll('.fil').forEach(c => {
+    const R = 8; c.width = R; c.height = R;
+    const g = c.getContext('2d'); g.fillStyle = PAL.c;
+    for (let y = 0; y < R; y++) for (let x = 0; x < R; x++)
+      if ((x + .5) ** 2 + (y + .5) ** 2 > R * R) g.fillRect(x, y, 1, 1);
+  });
+
+  /* 픽셀 구름 */
+  function makeCloud(w) {
+    const h = Math.round(w * 0.5), c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    const blobs = [];
+    // 바닥은 평평하고 위로 몽글몽글한 혹이 솟은 구름
+    blobs.push([w * 0.18, h - 1, h * 0.32], [w * 0.82, h - 1, h * 0.3]);
+    blobs.push([w * (0.42 + Math.random() * 0.1), h * 0.52, h * 0.48]);
+    blobs.push([w * (0.66 + Math.random() * 0.08), h * 0.68, h * 0.34]);
+    blobs.push([w * 0.3, h * 0.75, h * 0.3]);
+    const inside = (x, y) => y < h - 1 && blobs.some(([bx, by, r]) => (x + .5 - bx) ** 2 + (y + .5 - by) ** 2 < r * r);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (!inside(x, y)) continue;
+      g.fillStyle = !inside(x, y + 1) || !inside(x, y + 2) ? PAL.c : !inside(x, y - 1) ? PAL.h : PAL.w;
+      g.fillRect(x, y, 1, 1);
+    }
+    return c;
+  }
+  const clouds = [];
+  function initClouds() {
+    clouds.length = 0;
+    const n = Math.max(3, Math.round(W / 45));
+    for (let i = 0; i < n; i++) {
+      const img = makeCloud(20 + Math.floor(Math.random() * 30));
+      clouds.push({ img, x: Math.random() * W, y: 4 + Math.random() * H * 0.35, v: 0.02 + Math.random() * 0.05 });
+    }
+  }
+  function drawClouds(dt) {
+    clouds.forEach(c => {
+      c.x += c.v * dt;
+      if (c.x > W + 2) c.x = -c.img.width - 2;
+      mx.drawImage(c.img, Math.round(c.x), Math.round(c.y));
+    });
+  }
+  addEventListener('resize', initClouds);
+
+  /* ── 루프 ─────────────────────────────────────── */
+  let last = performance.now();
+  function loop(ts) {
+    const dt = Math.max(0, Math.min(3, (ts - last) / 16.667));
+    last = ts; frame += dt;
+    if (running) renderTime();
+    updateMonsters(dt); updateHatch(dt); updateParticles(dt);
+    mx.clearRect(0, 0, W, H);
+    drawClouds(dt);
+    mx.drawImage(ground, 0, H - 12);
+    drawHatch();
+    drawMonsters();
+    drawParticles();
+    drawPet(dt);
+    requestAnimationFrame(loop);
+  }
+
+  addEventListener('resize', layout);
+  layout();
+  initClouds();
+  monsters = [0, 1, 2, 3].map((sp, i) => newMonster(sp, Math.round(W * (0.12 + i * 0.22))));
+  setMode('idle');
+  if (muted) { el.snd.textContent = 'SND OFF'; el.snd.classList.add('off'); }
+  renderAll();
+  if (document.fonts) document.fonts.ready.then(() => { document.querySelectorAll('[data-step]').forEach(applyStep); shapeCross(); });
+  requestAnimationFrame(loop);
+
+  // 테스트용 핸들
+  window.__lapmon = { get mode() { return mode; }, get monsters() { return monsters; }, get hatch() { return hatch; }, now };
+})();
+</script>
+</body>
+</html>
