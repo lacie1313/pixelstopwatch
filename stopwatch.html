@@ -35,7 +35,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; }
   body {
-    background: var(--blue) url("background.jpeg") center / cover no-repeat fixed;
+    background: var(--blue);
     image-rendering: pixelated;
     overflow-x: hidden;
     font-family: 'Press Start 2P', 'DotGothic16', monospace;
@@ -940,20 +940,66 @@
     if (sitting) drawZ(px, st.x + 13, y + 3, frame, PAL.D);
   }
 
-  /* 정적 레이어: 배경, 풀밭, 회로 */
-  const bgImg = new Image();
-  bgImg.onload = drawBg;
-  bgImg.src = 'background.jpeg';
+  /* 정적 레이어: 오리지널 픽셀 풍경 (이미지 파일 없이 직접 그림) */
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
   function drawBg() {
-    if (!bgImg.naturalWidth) return;
-    // 배경을 픽셀 단위(P)로 축소한 뒤 정수 배율로 확대해 도트 느낌을 살림
     const BW = Math.ceil(innerWidth / P), BH = Math.ceil(innerHeight / P);
     bg.width = BW; bg.height = BH;
     bg.style.width = BW * P + 'px'; bg.style.height = BH * P + 'px';
-    const sc = Math.max(BW / bgImg.naturalWidth, BH / bgImg.naturalHeight);
-    const dw = bgImg.naturalWidth * sc, dh = bgImg.naturalHeight * sc;
-    bgx.imageSmoothingEnabled = true;
-    bgx.drawImage(bgImg, (BW - dw) / 2, (BH - dh) / 2, dw, dh);
+    const g = bgx;
+    let seed = 20;
+    const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+    const hz = Math.round(BH * 0.66);
+
+    // 하늘: 위는 진한 파랑, 수평선 쪽으로 오더드 디더링으로 옅어짐
+    g.fillStyle = PAL.b; g.fillRect(0, 0, BW, hz);
+    const d0 = Math.round(hz * 0.45);
+    for (let y = d0; y < hz; y++) {
+      const t = (y - d0) / (hz - d0) * 17;
+      for (let x = 0; x < BW; x++) {
+        if (t > BAYER[(y % 4) * 4 + (x % 4)] + 1) { g.fillStyle = t > 15 ? PAL.h : PAL.c; g.fillRect(x, y, 1, 1); }
+      }
+    }
+
+    // 도시 실루엣 (먼 층 → 가까운 층)
+    const skyline = (color, win, minH, maxH, base) => {
+      let x = -2;
+      while (x < BW) {
+        const w = 3 + Math.floor(rnd() * 6);
+        let h = minH + Math.floor(rnd() * (maxH - minH));
+        if (rnd() < 0.12) h += Math.floor(maxH * 0.6);
+        g.fillStyle = color; g.fillRect(x, base - h, w, h);
+        if (rnd() < 0.25) g.fillRect(x + Math.floor(w / 2), base - h - 2, 1, 2); // 안테나
+        g.fillStyle = win;
+        for (let yy = base - h + 2; yy < base - 1; yy += 2)
+          for (let xx = x + 1; xx < x + w - 1; xx += 2) if (rnd() < 0.45) g.fillRect(xx, yy, 1, 1);
+        x += w + (rnd() < 0.3 ? 1 : 0);
+      }
+    };
+    skyline(PAL.t, PAL.h, 4, 12, hz - 1);
+    skyline(PAL.a, PAL.c, 2, 7, hz);
+
+    // 해안 숲 띠
+    for (let x = 0; x < BW; x++) {
+      const bump = 1 + Math.round(1 + Math.sin(x * 0.7) + Math.sin(x * 0.23) * 1.5);
+      g.fillStyle = PAL.G; g.fillRect(x, hz - bump + 1, 1, bump + 1);
+      if (rnd() < 0.3) { g.fillStyle = PAL.t; g.fillRect(x, hz + 1, 1, 1); }
+    }
+
+    // 바다: 파랑 바탕에 반짝이는 물결 (수평선 근처일수록 촘촘)
+    g.fillStyle = PAL.b; g.fillRect(0, hz + 2, BW, BH - hz - 2);
+    g.fillStyle = PAL.k; g.globalAlpha = 0.18; g.fillRect(0, hz + 2, BW, 1); g.globalAlpha = 1;
+    for (let y = hz + 3; y < BH; y++) {
+      const dens = 0.14 * (1 - (y - hz) / (BH - hz)) + 0.02;
+      for (let x = 0; x < BW; x++) {
+        if (rnd() < dens) {
+          const len = 1 + Math.floor(rnd() * 3);
+          g.fillStyle = rnd() < 0.35 ? PAL.w : PAL.c;
+          g.fillRect(x, y, len, 1);
+          x += len + 1;
+        }
+      }
+    }
   }
 
   function buildGround() {
